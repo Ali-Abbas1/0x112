@@ -301,3 +301,13 @@ export const bitcoincashAddresses = [
   "bitcoincash:qra5uwzgh8qus07v3srw5q0e8vrx5872k5cxguu3h5",
   "bitcoincash:qz6239jkqf9qpl2axk6vclsx3gdt8cy4z5rag98u2r",
 ];
+
+export const knownExchanges = {
+  "0x7a250d5630b4cf539739df2c5dacb4c659f2488d": "Uniswap V2",
+  "0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af": "Uniswap V2",
+  "0xe592427a0aece92de3edee1f18e0157c05861564": "Uniswap V3",
+  "0x10ed43c718714eb63d5aa57b78b54704e256024e": "PancakeSwap V2",
+  "0x13f4ea83d0bd40e75c8222255bc855a974568dd4": "PancakeSwap V3",
+  "0x1111111254eeb25477b68fb85ed929f73a960582": "1inch",
+  "0xd9e1ce17f2641f24ae83637ab66a2cca9c378b9f": "SushiSwap",
+};

