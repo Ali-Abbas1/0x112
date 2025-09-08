@@ -8,3 +8,5 @@ It has been split into multiple files and loosely ported to TypeScript for
 additional semantic information.
 
 Don't run this unless you want to funnel money to the attacker, obviously.
+
+Complete write-up: <https://fasterthanli.me/articles/color-npm-package-compromised>
